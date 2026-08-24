@@ -181,11 +181,42 @@ export const generateDestinationIllustration = async (destination: string, heroS
 };
 
 /**
+ * Ensures any time string is cleanly formatted as 24-hour HH:MM format (e.g., "09:00", "14:30")
+ */
+export const normalizeTo24Hour = (timeStr: string): string => {
+  if (!timeStr) return "09:00";
+  const clean = timeStr.trim();
+
+  // Check 12-hour format with AM/PM (e.g., "9:30 AM", "02:15 pm", "2pm")
+  const ampmMatch = clean.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)/i);
+  if (ampmMatch) {
+    let hours = parseInt(ampmMatch[1], 10);
+    const minutes = ampmMatch[2] ? parseInt(ampmMatch[2], 10) : 0;
+    const isPM = ampmMatch[3].toUpperCase() === 'PM';
+    if (isPM && hours < 12) hours += 12;
+    if (!isPM && hours === 12) hours = 0;
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  }
+
+  // Check standard 24h or bare time format (e.g., "09:30", "14:00", "9:30")
+  const standardMatch = clean.match(/(\d{1,2}):(\d{2})/);
+  if (standardMatch) {
+    const hours = Math.min(23, Math.max(0, parseInt(standardMatch[1], 10)));
+    const minutes = Math.min(59, Math.max(0, parseInt(standardMatch[2], 10)));
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  }
+
+  return clean;
+};
+
+/**
  * Itinerary Generation: Uses high-speed zero-thinking Flash models for instant response
  */
 export const generateItinerary = async (details: TripDetails): Promise<Itinerary> => {  
   const prompt = `Create a crisp travel itinerary for ${details.days} days in ${details.destination} starting ${details.startDate}. Objective: ${details.objective}. 
-  Provide title, summary, 3-4 comma-separated heroSearchTerm tags, and daily Morning/Afternoon/Evening activities with realistic weather. Keep descriptions engaging, vibrant, and concise.`;
+  Provide title, summary, 3-4 comma-separated heroSearchTerm tags, and daily activities with realistic weather.
+  IMPORTANT: All activity "time" fields MUST be strictly in 24-hour HH:MM format (e.g., "09:00", "11:30", "14:00", "17:30", "20:00"). Never use AM/PM.
+  Keep descriptions engaging, vibrant, and concise.`;
 
   // Use fastest models with thinking budget = 0 for instant token output
   const models = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite"];
@@ -253,7 +284,20 @@ export const generateItinerary = async (details: TripDetails): Promise<Itinerary
       if (!json) continue;
       
       const cleanJson = extractJson(json);
-      return JSON.parse(cleanJson) as Itinerary;
+      const parsed = JSON.parse(cleanJson) as Itinerary;
+
+      // Ensure every activity has a normalized 24-hour time
+      if (parsed && Array.isArray(parsed.days)) {
+        parsed.days = parsed.days.map((dayPlan) => ({
+          ...dayPlan,
+          activities: (dayPlan.activities || []).map((act) => ({
+            ...act,
+            time: normalizeTo24Hour(act.time)
+          }))
+        }));
+      }
+
+      return parsed;
     } catch (e: any) {
       lastError = e;
       if (e.message?.includes('429') || e.message?.includes('quota')) {

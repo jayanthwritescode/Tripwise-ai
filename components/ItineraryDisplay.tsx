@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Clock, MapPin, Sparkles, ExternalLink, Trash2, GripVertical, Sun, Cloud, CloudRain, CloudLightning, Snowflake, Thermometer, Timer, ChevronDown, Plane, Building, Star, Map, Bed, Wifi, UtensilsCrossed, Info, ChevronUp, Quote, Camera } from 'lucide-react';
+import { Clock, MapPin, Sparkles, ExternalLink, Trash2, GripVertical, Sun, Cloud, CloudRain, CloudLightning, Snowflake, Thermometer, Timer, ChevronDown, Plane, Building, Star, Map, Bed, Wifi, UtensilsCrossed, Info, ChevronUp, Quote, Camera, ArrowUp, ArrowDown, ArrowRightLeft, Move } from 'lucide-react';
 import { Itinerary, DayPlan, Activity, FlightInfo, HotelInfo, HeroImage } from '../types';
 
 interface ItineraryDisplayProps {
@@ -16,6 +16,27 @@ const WeatherIcon: React.FC<{ condition: string }> = ({ condition }) => {
   if (lower.includes('storm') || lower.includes('thunder')) return <CloudLightning className="w-5 h-5 text-indigo-500" />;
   if (lower.includes('snow')) return <Snowflake className="w-5 h-5 text-cyan-400" />;
   return <Cloud className="w-5 h-5 text-gray-400" />;
+};
+
+const format24HourDisplay = (time: string): string => {
+  if (!time) return "09:00";
+  const clean = time.trim();
+  const ampmMatch = clean.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)/i);
+  if (ampmMatch) {
+    let hours = parseInt(ampmMatch[1], 10);
+    const minutes = ampmMatch[2] ? parseInt(ampmMatch[2], 10) : 0;
+    const isPM = ampmMatch[3].toUpperCase() === 'PM';
+    if (isPM && hours < 12) hours += 12;
+    if (!isPM && hours === 12) hours = 0;
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  }
+  const match24 = clean.match(/(\d{1,2}):(\d{2})/);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  }
+  return clean;
 };
 
 const FlightSummary: React.FC<{ flight: FlightInfo }> = ({ flight }) => (
@@ -189,6 +210,7 @@ const HeroSection: React.FC<{ hero?: HeroImage, title: string }> = ({ hero, titl
 const DayCard: React.FC<{
   dayPlan: DayPlan;
   dayIdx: number;
+  totalDays: number;
   draggedItem: { dayIdx: number; actIdx: number } | null;
   dragOverItem: { dayIdx: number; actIdx: number | null } | null;
   recentlyMoved: { dayIdx: number; actIdx: number } | null;
@@ -198,14 +220,16 @@ const DayCard: React.FC<{
   onDragEnd: (e: React.DragEvent) => void;
   onDragLeave: () => void;
   onUpdateActivity?: (dayIndex: number, activityIndex: number, action: 'up' | 'down' | 'delete') => void;
-}> = ({ dayPlan, dayIdx, draggedItem, dragOverItem, recentlyMoved, onDragStart, onDragOver, onDrop, onDragEnd, onDragLeave, onUpdateActivity }) => {
+  onReorderActivity?: (fromDayIdx: number, fromActIdx: number, toDayIdx: number, toActIdx: number) => void;
+}> = ({ dayPlan, dayIdx, totalDays, draggedItem, dragOverItem, recentlyMoved, onDragStart, onDragOver, onDrop, onDragEnd, onDragLeave, onUpdateActivity, onReorderActivity }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [movingActIdx, setMovingActIdx] = useState<number | null>(null);
 
   return (
     <div className="bg-white rounded-[2.5rem] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.03)] border border-gray-100/50 overflow-hidden transition-all hover:shadow-[0_30px_60px_-12px_rgba(0,0,0,0.05)]">
       <div 
         onClick={() => setIsExpanded(!isExpanded)}
-        className="px-8 py-10 md:px-12 flex flex-col md:flex-row md:items-center justify-between gap-6 cursor-pointer group"
+        className="px-8 py-10 md:px-12 flex flex-col md:flex-row md:items-center justify-between gap-6 cursor-pointer group select-none"
       >
         <div className="flex items-center gap-8">
           <div className="relative">
@@ -228,6 +252,9 @@ const DayCard: React.FC<{
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
+            {dayPlan.activities.length} {dayPlan.activities.length === 1 ? 'activity' : 'activities'}
+          </span>
           <div className={`p-3 rounded-full bg-slate-50 text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-all ${isExpanded ? 'rotate-180' : ''}`}>
             <ChevronDown className="w-5 h-5" />
           </div>
@@ -236,11 +263,12 @@ const DayCard: React.FC<{
 
       <div className={`transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}>
         <div className="px-8 pb-12 md:px-12">
-          <div className="relative border-l-2 border-slate-50 ml-4 space-y-4 pl-12 pb-8">
+          <div className="relative border-l-2 border-slate-50 ml-4 space-y-5 pl-12 pb-8">
             {dayPlan.activities.map((activity, actIdx) => {
               const isDragging = draggedItem?.dayIdx === dayIdx && draggedItem?.actIdx === actIdx;
               const isRecentlyMoved = recentlyMoved?.dayIdx === dayIdx && recentlyMoved?.actIdx === actIdx;
               const isDragTarget = dragOverItem?.dayIdx === dayIdx && dragOverItem?.actIdx === actIdx && !isDragging;
+              const formatted24h = format24HourDisplay(activity.time);
 
               return (
                 <div 
@@ -250,47 +278,143 @@ const DayCard: React.FC<{
                   onDrop={(e) => onDrop(e, dayIdx, actIdx)}
                   onDragLeave={onDragLeave}
                 >
-                  <div className={`absolute -top-2 left-0 right-0 h-1 bg-indigo-600 rounded-full z-30 transition-all duration-300 pointer-events-none transform origin-left ${isDragTarget ? 'opacity-100 scale-x-100' : 'opacity-0 scale-x-0'}`}></div>
+                  <div className={`absolute -top-2 left-0 right-0 h-1.5 bg-indigo-600 rounded-full z-30 transition-all duration-200 pointer-events-none transform origin-left ${isDragTarget ? 'opacity-100 scale-x-100 shadow-md shadow-indigo-200' : 'opacity-0 scale-x-0'}`}></div>
 
                   <div 
                     draggable
                     onDragStart={(e) => onDragStart(e, dayIdx, actIdx)}
                     onDragEnd={onDragEnd}
-                    className={`relative p-6 -ml-6 rounded-3xl transition-all duration-500 cursor-grab active:cursor-grabbing border-2 border-transparent ${
-                      isDragging ? 'opacity-10 scale-95 grayscale' : 'hover:bg-slate-50'
+                    className={`relative p-6 -ml-6 rounded-3xl transition-all duration-300 border-2 ${
+                      isDragging ? 'opacity-20 scale-95 grayscale border-dashed border-indigo-400 bg-indigo-50/30' : 'hover:bg-slate-50/80 border-transparent hover:border-slate-100 hover:shadow-sm'
                     } ${
-                      isRecentlyMoved ? 'ring-4 ring-indigo-500/10 bg-indigo-50/50 border-indigo-200 shadow-sm' : ''
+                      isRecentlyMoved ? 'ring-4 ring-indigo-500/20 bg-indigo-50/80 border-indigo-300 shadow-md' : ''
                     }`}
                   >
                     <div className="absolute -left-[54px] top-10 w-3 h-3 rounded-full bg-slate-200 ring-4 ring-white z-20 transition-all group-hover/item:bg-indigo-600 group-hover/item:ring-indigo-50"></div>
-                    <div className="flex flex-col md:flex-row md:items-start gap-8">
+                    <div className="flex flex-col md:flex-row md:items-start gap-6 md:gap-8">
                       <div className="shrink-0 min-w-[110px] pt-1">
-                        <div className="text-[#1E1B4B] font-black text-xl tracking-tight mb-2 transition-all group-hover/item:scale-105 origin-left">
-                          {activity.time}
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white font-mono font-bold text-lg tracking-wider mb-2 group-hover/item:bg-indigo-600 transition-colors shadow-sm">
+                          <Clock className="w-3.5 h-3.5 opacity-70" />
+                          {formatted24h}
                         </div>
-                        <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">
+                        <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">
                           <Timer className="w-3 h-3" /> {activity.duration}
                         </div>
                       </div>
-                      <div className="flex-1 space-y-3.5 pr-8">
+                      <div className="flex-1 space-y-3.5 pr-2 md:pr-4">
                         <div className="flex items-start justify-between gap-4">
                           <h4 className="text-xl font-bold text-slate-900 leading-snug group-hover/item:text-indigo-600 transition-colors">
                             {activity.title}
                           </h4>
-                          <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                            <div className="p-1.5 text-slate-300 cursor-move">
+                          
+                          {/* Rearranging & Action Toolbar */}
+                          <div className="flex items-center gap-1 bg-white md:bg-transparent px-2 py-1 rounded-2xl border md:border-transparent border-slate-100 shadow-sm md:shadow-none transition-all">
+                            {/* Reorder Buttons */}
+                            {onUpdateActivity && (
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  disabled={actIdx === 0}
+                                  onClick={(e) => { e.stopPropagation(); onUpdateActivity(dayIdx, actIdx, 'up'); }}
+                                  title="Move earlier"
+                                  className={`p-1.5 rounded-lg transition-all ${
+                                    actIdx === 0 
+                                      ? 'text-slate-200 cursor-not-allowed' 
+                                      : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 active:scale-95'
+                                  }`}
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={actIdx === dayPlan.activities.length - 1}
+                                  onClick={(e) => { e.stopPropagation(); onUpdateActivity(dayIdx, actIdx, 'down'); }}
+                                  title="Move later"
+                                  className={`p-1.5 rounded-lg transition-all ${
+                                    actIdx === dayPlan.activities.length - 1 
+                                      ? 'text-slate-200 cursor-not-allowed' 
+                                      : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 active:scale-95'
+                                  }`}
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Move to another Day trigger */}
+                            {totalDays > 1 && onReorderActivity && (
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMovingActIdx(movingActIdx === actIdx ? null : actIdx);
+                                  }}
+                                  title="Move to another Day"
+                                  className={`p-1.5 rounded-lg transition-all ${
+                                    movingActIdx === actIdx
+                                      ? 'bg-indigo-600 text-white'
+                                      : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'
+                                  }`}
+                                >
+                                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                                </button>
+
+                                {movingActIdx === actIdx && (
+                                  <div 
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-indigo-100 p-2 z-50 animate-in fade-in zoom-in-95 duration-150"
+                                  >
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-3 py-1.5">
+                                      Move to Day
+                                    </p>
+                                    <div className="space-y-1">
+                                      {Array.from({ length: totalDays }).map((_, targetDayIdx) => (
+                                        <button
+                                          key={targetDayIdx}
+                                          disabled={targetDayIdx === dayIdx}
+                                          onClick={() => {
+                                            onReorderActivity(dayIdx, actIdx, targetDayIdx, 0);
+                                            setMovingActIdx(null);
+                                          }}
+                                          className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${
+                                            targetDayIdx === dayIdx
+                                              ? 'text-slate-300 cursor-not-allowed bg-slate-50'
+                                              : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-600'
+                                          }`}
+                                        >
+                                          <span>Day {targetDayIdx + 1}</span>
+                                          {targetDayIdx === dayIdx && <span className="text-[9px] uppercase tracking-wider opacity-60">Current</span>}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Drag handle */}
+                            <div 
+                              title="Drag to reorder"
+                              className="p-1.5 text-slate-300 hover:text-slate-600 cursor-grab active:cursor-grabbing rounded-lg hover:bg-slate-100"
+                            >
                                <GripVertical className="w-4 h-4" />
                             </div>
+
+                            {/* Delete */}
                             {onUpdateActivity && (
                               <button
+                                type="button"
+                                title="Remove activity"
                                 onClick={(e) => { e.stopPropagation(); onUpdateActivity(dayIdx, actIdx, 'delete'); }}
-                                className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
+                                className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             )}
                           </div>
                         </div>
+
                         <p className="text-slate-700 leading-loose font-medium text-[15.5px]">
                           {activity.description}
                         </p>
@@ -319,12 +443,12 @@ const DayCard: React.FC<{
               onDrop={(e) => onDrop(e, dayIdx, dayPlan.activities.length)}
               className={`h-16 -ml-6 border-2 border-dashed rounded-3xl transition-all duration-300 flex items-center justify-center ${
                 dragOverItem?.dayIdx === dayIdx && dragOverItem?.actIdx === null
-                  ? 'bg-indigo-50 border-indigo-400 opacity-100'
-                  : 'border-transparent opacity-0 pointer-events-auto'
+                  ? 'bg-indigo-50 border-indigo-400 opacity-100 shadow-inner'
+                  : 'border-transparent opacity-0 pointer-events-auto hover:border-slate-200 hover:opacity-40'
               }`}
             >
               <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
-                <Sparkles className="w-4 h-4" /> Drop to end of day
+                <Sparkles className="w-4 h-4" /> Drop to end of Day {dayPlan.day}
               </div>
             </div>
           </div>
@@ -362,13 +486,11 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, onUpdate
   const handleDrop = (e: React.DragEvent, dayIdx: number, targetIdx: number) => {
     e.preventDefault();
     if (draggedItem && onReorderActivity) {
-      // Check if item actually moved position
       if (draggedItem.dayIdx !== dayIdx || draggedItem.actIdx !== targetIdx) {
         onReorderActivity(draggedItem.dayIdx, draggedItem.actIdx, dayIdx, targetIdx);
-        // Correct the index highlighting if moving within same day after the source
         let highlightIdx = targetIdx;
         if (draggedItem.dayIdx === dayIdx && draggedItem.actIdx < targetIdx) {
-          highlightIdx = targetIdx - 1;
+          highlightIdx = Math.max(0, targetIdx - 1);
         }
         setRecentlyMoved({ dayIdx, actIdx: highlightIdx });
       }
@@ -403,7 +525,7 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, onUpdate
              </div>
              <div className="w-1.5 h-1.5 rounded-full bg-indigo-200"></div>
              <div className="flex items-center gap-2.5">
-                <Sparkles className="w-4.5 h-4.5" /> Personalized
+                <Sparkles className="w-4.5 h-4.5" /> Drag & Reorder
              </div>
           </div>
         </div>
@@ -428,6 +550,7 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, onUpdate
             key={dayIdx}
             dayPlan={dayPlan}
             dayIdx={dayIdx}
+            totalDays={itinerary.days.length}
             draggedItem={draggedItem}
             dragOverItem={dragOverItem}
             recentlyMoved={recentlyMoved}
@@ -437,6 +560,7 @@ const ItineraryDisplay: React.FC<ItineraryDisplayProps> = ({ itinerary, onUpdate
             onDragEnd={resetDragState}
             onDragLeave={() => setDragOverItem(null)}
             onUpdateActivity={onUpdateActivity}
+            onReorderActivity={onReorderActivity}
           />
         ))}
       </div>

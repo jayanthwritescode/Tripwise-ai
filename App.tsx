@@ -30,32 +30,47 @@ const preloadImage = (url: string, timeoutMs: number = 2000): Promise<void> => {
   });
 };
 
-// Time Utility Functions
+// Time Utility Functions (Strict 24-Hour Format HH:MM)
 const parseTime = (timeStr: string): number => {
-  const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/);
-  if (!match) return 540; 
-  let hours = parseInt(match[1]);
-  const minutes = parseInt(match[2]);
-  const ampm = match[3]?.toUpperCase();
-  if (ampm === 'PM' && hours < 12) hours += 12;
-  if (ampm === 'AM' && hours === 12) hours = 0;
-  return hours * 60 + minutes;
+  if (!timeStr) return 540; // Default 09:00 (540 minutes)
+  const clean = timeStr.trim();
+
+  // 12-hour format with AM/PM
+  const ampmMatch = clean.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)/i);
+  if (ampmMatch) {
+    let hours = parseInt(ampmMatch[1], 10);
+    const minutes = ampmMatch[2] ? parseInt(ampmMatch[2], 10) : 0;
+    const isPM = ampmMatch[3].toUpperCase() === 'PM';
+    if (isPM && hours < 12) hours += 12;
+    if (!isPM && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  }
+
+  // 24-hour HH:MM format
+  const match24 = clean.match(/(\d{1,2}):(\d{2})/);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    return hours * 60 + minutes;
+  }
+
+  return 540;
 };
 
-const formatTime = (minutes: number): string => {
-  let hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12 || 12;
-  return `${hours}:${mins.toString().padStart(2, '0')} ${ampm}`;
+const formatTime24 = (minutes: number): string => {
+  const normalizedMins = Math.max(0, minutes) % (24 * 60);
+  const hours = Math.floor(normalizedMins / 60);
+  const mins = normalizedMins % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
 };
 
 const parseDuration = (durStr: string): number => {
-  const hMatch = durStr.match(/(\d+)\s*h/i);
-  const mMatch = durStr.match(/(\d+)\s*m/i);
+  if (!durStr) return 60;
+  const hMatch = durStr.match(/(\d+(?:\.\d+)?)\s*(?:h|hr|hours?)/i);
+  const mMatch = durStr.match(/(\d+)\s*(?:m|min|mins|minutes?)/i);
   let total = 0;
-  if (hMatch) total += parseInt(hMatch[1]) * 60;
-  if (mMatch) total += parseInt(mMatch[1]);
+  if (hMatch) total += Math.round(parseFloat(hMatch[1]) * 60);
+  if (mMatch) total += parseInt(mMatch[1], 10);
   return total || 60;
 };
 
@@ -63,11 +78,13 @@ const recalculateDayTimings = (activities: Activity[]): Activity[] => {
   if (activities.length === 0) return [];
   const updated = [...activities];
   let currentTime = parseTime(updated[0].time);
+  updated[0].time = formatTime24(currentTime);
+
   for (let i = 1; i < updated.length; i++) {
-    const prevActivity = updated[i-1];
+    const prevActivity = updated[i - 1];
     const duration = parseDuration(prevActivity.duration);
-    currentTime += duration + 15; // 15 min buffer
-    updated[i].time = formatTime(currentTime);
+    currentTime += duration + 15; // 15 min buffer between activities
+    updated[i].time = formatTime24(currentTime);
   }
   return updated;
 };
