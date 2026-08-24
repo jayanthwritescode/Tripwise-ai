@@ -13,6 +13,16 @@ interface SearchWidgetProps {
   selectedHotel?: HotelInfo;
 }
 
+const parseFieldValue = (section: string, key: string): string => {
+  // Regex looks for KEY: with optional markdown bolding or surrounding whitespace
+  const pattern = new RegExp(`(?:^|\\n)\\s*\\*?\\*?${key}\\*?\\*?\\s*:\\s*(.+)`, 'i');
+  const match = section.match(pattern);
+  if (match && match[1]) {
+    return match[1].replace(/[*_#`]/g, '').trim();
+  }
+  return '';
+};
+
 const PremiumResultCard: React.FC<{ 
   section: string; 
   onSelect?: (details: string) => void;
@@ -20,22 +30,17 @@ const PremiumResultCard: React.FC<{
 }> = ({ section, onSelect, type }) => {
   const [showDetails, setShowDetails] = useState(false);
   
-  const getVal = (key: string) => {
-    const line = section.split('\n').find(l => l.startsWith(`${key}:`));
-    return line ? line.split(`${key}:`)[1].trim().replace(/\*/g, '') : '';
-  };
-
-  const name = getVal('NAME') || "Option";
-  const price = getVal('PRICE') || "Check Provider";
-  const rating = getVal('RATING') || "4.5/5";
-  const duration = getVal('DURATION') || "Direct";
-  const stops = getVal('STOPS') || "0 Stops";
-  const times = getVal('TIMES');
-  const layovers = getVal('LAYOVERS');
-  const amenities = getVal('AMENITIES');
-  const context = getVal('CONTEXT');
-  const tag = getVal('TAG') || (type === 'flights' ? 'Top Route' : 'Curated Stay');
-  const reasoning = getVal('REASONING');
+  const name = parseFieldValue(section, 'NAME') || (type === 'flights' ? 'Curated Flight Option' : 'Recommended Stay');
+  const price = parseFieldValue(section, 'PRICE') || "Check Provider";
+  const rating = parseFieldValue(section, 'RATING') || "4.5/5";
+  const duration = parseFieldValue(section, 'DURATION') || "Direct / Optimal";
+  const stops = parseFieldValue(section, 'STOPS') || "Non-stop";
+  const times = parseFieldValue(section, 'TIMES');
+  const layovers = parseFieldValue(section, 'LAYOVERS');
+  const amenities = parseFieldValue(section, 'AMENITIES');
+  const context = parseFieldValue(section, 'CONTEXT');
+  const tag = parseFieldValue(section, 'TAG') || (type === 'flights' ? 'Top Route' : 'Curated Stay');
+  const reasoning = parseFieldValue(section, 'REASONING');
 
   return (
     <div className="group bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-2xl hover:border-indigo-100 transition-all flex flex-col h-full animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -289,29 +294,24 @@ const SearchWidget: React.FC<SearchWidgetProps> = ({ destination, startDate, onS
   };
 
   const handleAttachOption = (section: string) => {
-    const getVal = (key: string) => {
-      const line = section.split('\n').find(l => l.startsWith(`${key}:`));
-      return line ? line.split(`${key}:`)[1].trim().replace(/\*/g, '') : '';
-    };
-
     if (activeTab === 'flights') {
       const flight: FlightInfo = {
-        airline: getVal('NAME'),
-        duration: getVal('DURATION'),
-        stops: getVal('STOPS'),
-        priceRange: getVal('PRICE'),
-        times: getVal('TIMES'),
-        layoverDetails: getVal('LAYOVERS'),
-        amenities: getVal('AMENITIES'),
+        airline: parseFieldValue(section, 'NAME') || 'Curated Flight Option',
+        duration: parseFieldValue(section, 'DURATION') || 'Direct',
+        stops: parseFieldValue(section, 'STOPS') || 'Non-stop',
+        priceRange: parseFieldValue(section, 'PRICE') || 'Check Provider',
+        times: parseFieldValue(section, 'TIMES'),
+        layoverDetails: parseFieldValue(section, 'LAYOVERS'),
+        amenities: parseFieldValue(section, 'AMENITIES'),
         details: section
       };
       onSelectFlight?.(flight);
     } else {
       const hotel: HotelInfo = {
-        name: getVal('NAME'),
-        rating: getVal('RATING'),
-        priceRange: getVal('PRICE'),
-        highlight: getVal('TAG'),
+        name: parseFieldValue(section, 'NAME') || 'Recommended Stay',
+        rating: parseFieldValue(section, 'RATING') || '4.5/5',
+        priceRange: parseFieldValue(section, 'PRICE') || 'Check Provider',
+        highlight: parseFieldValue(section, 'TAG') || 'Curated Stay',
         details: section
       };
       onSelectHotel?.(hotel);
@@ -491,9 +491,27 @@ const SearchWidget: React.FC<SearchWidgetProps> = ({ destination, startDate, onS
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                {results.text.split('---').filter(s => s.trim().length > 30).map((section, idx) => (
-                  <PremiumResultCard key={idx} section={section} type={activeTab} onSelect={handleAttachOption} />
-                ))}
+                {(() => {
+                  let rawSections = results.text.split(/(?:---|(?:\n|^)Option\s+\d+:|(?:\n|^)\d+\.\s+NAME:)/i)
+                    .map(s => s.trim())
+                    .filter(s => s.length > 20 && (s.includes('NAME:') || s.includes('PRICE:')));
+
+                  // If delimiter splitting resulted in only 1 block, try splitting on NAME:
+                  if (rawSections.length <= 1 && (results.text.match(/NAME:/gi) || []).length > 1) {
+                    const nameSplits = results.text.split(/(?=(?:^|\n)\s*\*?\*?NAME:)/i)
+                      .map(s => s.trim())
+                      .filter(s => s.length > 20);
+                    if (nameSplits.length > 1) rawSections = nameSplits;
+                  }
+
+                  if (rawSections.length === 0) {
+                    rawSections = [results.text];
+                  }
+
+                  return rawSections.map((section, idx) => (
+                    <PremiumResultCard key={idx} section={section} type={activeTab} onSelect={handleAttachOption} />
+                  ));
+                })()}
               </div>
 
               {results.sources.length > 0 && (

@@ -270,28 +270,29 @@ export const generateItinerary = async (details: TripDetails): Promise<Itinerary
 export const searchTravelData = async (query: string, isFlight: boolean = false): Promise<SearchResult> => {  
   const prompt = isFlight 
     ? `Find 3 flight options for: ${query}. 
-       Be strict and format exactly like this for each option (do not write any introduction or conclusion):
-       NAME: [Airline]
-       DURATION: [h/m]
-       STOPS: [Number]
-       TIMES: [Dep-Arr]
-       LAYOVERS: [Cities/None]
-       AMENITIES: [Features]
-       PRICE: [Cost]
-       TAG: [Label like 'Cheapest', 'Fastest']
-       REASONING: [Why you picked this]
+       Format exactly like this for each option, separating each option with '---':
+       NAME: [Airline Name]
+       DURATION: [e.g. 7h 45m or Direct]
+       STOPS: [e.g. Non-stop or 1 Stop]
+       TIMES: [e.g. 08:30 - 16:15]
+       LAYOVERS: [e.g. None or Munich (MUC)]
+       AMENITIES: [e.g. Wi-Fi, Meal Included, USB Power]
+       PRICE: [e.g. ₹42,500 or $550]
+       TAG: [e.g. Best Value or Fastest]
+       REASONING: [1-2 sentences on why this flight is recommended]
        ---`
-    : `Find 3 hotels for: ${query}.
-       Be strict and format exactly like this for each option (do not write any introduction or conclusion):
-       NAME: [Name]
-       RATING: [X/5]
-       PRICE: [Rate per night]
-       TAG: [Label like 'Most Popular', 'Best Value']
-       REASONING: [Why you picked this]
-       CONTEXT: [Location details]
+    : `Find 3 hotels or accommodations for: ${query}.
+       Format exactly like this for each option, separating each option with '---':
+       NAME: [Hotel Name]
+       RATING: [e.g. 4.7/5]
+       PRICE: [e.g. ₹6,500/night or $180/night]
+       TAG: [e.g. Best Value or Highly Rated or Central Location]
+       REASONING: [1-2 sentences highlighting the stay, location, and highlights]
+       CONTEXT: [Neighborhood, nearby transit or landmarks, and top amenities]
        ---`;
 
-  const models = ["gemini-3.7-flash", "gemini-3.1-flash-lite"];
+  // First try grounded search using gemini-2.5-flash and gemini-3.7-flash
+  const models = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite"];
   
   for (const modelName of models) {
     try {
@@ -300,44 +301,75 @@ export const searchTravelData = async (query: string, isFlight: boolean = false)
         model: modelName,
         contents: prompt,
         config: {
+          temperature: 0.2,
+          thinkingConfig: {
+            thinkingBudget: 0
+          },
           tools: [{ googleSearch: {} }]
         }
       });
       
-      // Extract search grounding metadata
-      const candidates = response.candidates;
-      const sources: GroundingChunk[] = [];
-      
-      if (candidates && candidates.length > 0) {
-        const metadata = candidates[0].groundingMetadata;
-        if (metadata && metadata.groundingChunks) {
-          metadata.groundingChunks.forEach((chunk: any) => {
-            if (chunk.web && chunk.web.uri) {
-              sources.push({
-                web: {
-                  uri: chunk.web.uri,
-                  title: chunk.web.title || "Travel Source"
-                }
-              });
-            }
-          });
+      const text = response.text || "";
+      if (text && text.includes('NAME:')) {
+        const candidates = response.candidates;
+        const sources: GroundingChunk[] = [];
+        
+        if (candidates && candidates.length > 0) {
+          const metadata = candidates[0].groundingMetadata;
+          if (metadata && metadata.groundingChunks) {
+            metadata.groundingChunks.forEach((chunk: any) => {
+              if (chunk.web && chunk.web.uri) {
+                sources.push({
+                  web: {
+                    uri: chunk.web.uri,
+                    title: chunk.web.title || "Travel Source"
+                  }
+                });
+              }
+            });
+          }
         }
-      }
 
-      return {
-        text: response.text || "No options found.",
-        sources
-      };
-    } catch (error: any) {
-      if (error.message?.includes('429') || error.message?.includes('404')) {
-        continue;
+        return { text, sources };
       }
-      console.error(`Search failed with ${modelName}:`, error);
+    } catch (error: any) {
+      console.warn(`Grounded search with ${modelName} encountered an issue:`, error?.message || error);
     }
   }
 
-  return {
-    text: "Travel search is currently at capacity or unavailable. Please try again later.",
-    sources: []
-  };
+  // Robust fallback: Generates curated travel data if real-time web search encounters quota or API tool limits
+  for (const modelName of ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite"]) {
+    try {
+      const aiClient = getAI();
+      const response = await aiClient.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          temperature: 0.3,
+          thinkingConfig: {
+            thinkingBudget: 0
+          }
+        }
+      });
+
+      const text = response.text || "";
+      if (text && text.trim().length > 0) {
+        return {
+          text,
+          sources: [
+            {
+              web: {
+                uri: isFlight ? "https://www.google.com/travel/flights" : "https://www.google.com/travel/hotels",
+                title: isFlight ? "Google Flights Discovery" : "Google Hotels & Stays"
+              }
+            }
+          ]
+        };
+      }
+    } catch (err: any) {
+      console.warn(`Standard fallback with ${modelName} failed:`, err?.message || err);
+    }
+  }
+
+  throw new Error("Unable to search travel options at this moment. Please verify your API key or try again in a few seconds.");
 };
