@@ -91,13 +91,55 @@ export const getDestinationSuggestions = async (input: string): Promise<string[]
   }
 };
 
+// Fast curated destination imagery lookup with keyword matching
+const CURATED_DESTINATIONS: Record<string, string> = {
+  paris: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1600&q=80",
+  tokyo: "https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=1600&q=80",
+  rome: "https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&w=1600&q=80",
+  london: "https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=1600&q=80",
+  "new york": "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?auto=format&fit=crop&w=1600&q=80",
+  bali: "https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1600&q=80",
+  dubai: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1600&q=80",
+  barcelona: "https://images.unsplash.com/photo-1539037116277-4db20889f2d4?auto=format&fit=crop&w=1600&q=80",
+  amsterdam: "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?auto=format&fit=crop&w=1600&q=80",
+  kyoto: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1600&q=80",
+  singapore: "https://images.unsplash.com/photo-1525625293386-3f8f99389edd?auto=format&fit=crop&w=1600&q=80",
+  sydney: "https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?auto=format&fit=crop&w=1600&q=80",
+  santorini: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=1600&q=80",
+  venice: "https://images.unsplash.com/photo-1514890547357-a9ee288728e0?auto=format&fit=crop&w=1600&q=80",
+  prague: "https://images.unsplash.com/photo-1541849546-216549ae216d?auto=format&fit=crop&w=1600&q=80",
+  switzerland: "https://images.unsplash.com/photo-1530122037265-a5f1f91d3b99?auto=format&fit=crop&w=1600&q=80",
+  hawaii: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80",
+  maldives: "https://images.unsplash.com/photo-1514282401047-d79a71a590e8?auto=format&fit=crop&w=1600&q=80",
+  thailand: "https://images.unsplash.com/photo-1528181304800-259b08848526?auto=format&fit=crop&w=1600&q=80",
+  iceland: "https://images.unsplash.com/photo-1504893524553-b855bce32c67?auto=format&fit=crop&w=1600&q=80"
+};
+
 /**
- * Illustration Generation: Uses Gemini / Imagen image generation with dynamic fallback
+ * Instant Hero Image: Synchronously delivers a beautiful destination photo in < 1ms
+ */
+export const getInstantDestinationHero = (destination: string): HeroImage => {
+  const normalized = (destination || '').toLowerCase();
+  const destKey = Object.keys(CURATED_DESTINATIONS).find(k => normalized.includes(k));
+  
+  const url = destKey
+    ? CURATED_DESTINATIONS[destKey]
+    : `https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1600&q=80`;
+
+  return {
+    url,
+    photographerName: `${destination} Travel Photography`,
+    photographerUrl: "https://unsplash.com"
+  };
+};
+
+/**
+ * Background / Async Illustration Generation (non-blocking)
  */
 export const generateDestinationIllustration = async (destination: string, heroSearchTerm?: string): Promise<HeroImage | undefined> => {
   const prompt = `Professional scenic travel photography of ${destination}. ${heroSearchTerm ? `Featuring ${heroSearchTerm}.` : ''} Stunning panoramic landmark view, golden hour sunlight, luxury travel magazine editorial, ultra-high resolution, vibrant atmosphere. No text, no logos.`;
 
-  const imageModels = ["gemini-3.1-flash-image", "gemini-2.5-flash-image", "imagen-3.0-generate-002"];
+  const imageModels = ["gemini-2.5-flash-image", "imagen-3.0-generate-002"];
   
   for (const modelName of imageModels) {
     try {
@@ -131,49 +173,22 @@ export const generateDestinationIllustration = async (destination: string, heroS
         }
       }
     } catch (err: any) {
-      console.warn(`Model ${modelName} image generation attempt:`, err?.message || err);
+      // Continue to instant curated imagery
     }
   }
 
-  // Fallback to high-quality curated travel photography
-  const curatedDestinations: Record<string, string> = {
-    paris: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1600&q=80",
-    tokyo: "https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=1600&q=80",
-    rome: "https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&w=1600&q=80",
-    london: "https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=1600&q=80",
-    "new york": "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?auto=format&fit=crop&w=1600&q=80",
-    bali: "https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1600&q=80",
-    dubai: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1600&q=80",
-    barcelona: "https://images.unsplash.com/photo-1539037116277-4db20889f2d4?auto=format&fit=crop&w=1600&q=80",
-    amsterdam: "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?auto=format&fit=crop&w=1600&q=80",
-    kyoto: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1600&q=80",
-    singapore: "https://images.unsplash.com/photo-1525625293386-3f8f99389edd?auto=format&fit=crop&w=1600&q=80",
-    sydney: "https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?auto=format&fit=crop&w=1600&q=80",
-    santorini: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=1600&q=80",
-    venice: "https://images.unsplash.com/photo-1514890547357-a9ee288728e0?auto=format&fit=crop&w=1600&q=80",
-    prague: "https://images.unsplash.com/photo-1541849546-216549ae216d?auto=format&fit=crop&w=1600&q=80"
-  };
-
-  const destKey = Object.keys(curatedDestinations).find(k => destination.toLowerCase().includes(k));
-  const fallbackUrl = destKey 
-    ? curatedDestinations[destKey] 
-    : `https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1600&q=80`;
-
-  return {
-    url: fallbackUrl,
-    photographerName: `${destination} Travel Collection`,
-    photographerUrl: "https://unsplash.com"
-  };
+  return getInstantDestinationHero(destination);
 };
 
 /**
- * Itinerary Generation: Uses gemini-3.7-flash for top-tier travel planning.
+ * Itinerary Generation: Uses high-speed zero-thinking Flash models for instant response
  */
 export const generateItinerary = async (details: TripDetails): Promise<Itinerary> => {  
-  const prompt = `Create a travel itinerary for ${details.days} days in ${details.destination} starting ${details.startDate}. Objective: ${details.objective}. 
-  Provide title, summary, 3-4 comma-separated heroSearchTerm tags, and daily Morning/Afternoon/Evening activities with realistic weather.`;
+  const prompt = `Create a crisp travel itinerary for ${details.days} days in ${details.destination} starting ${details.startDate}. Objective: ${details.objective}. 
+  Provide title, summary, 3-4 comma-separated heroSearchTerm tags, and daily Morning/Afternoon/Evening activities with realistic weather. Keep descriptions engaging, vibrant, and concise.`;
 
-  const models = ["gemini-3.7-flash", "gemini-3.1-flash-lite"];
+  // Use fastest models with thinking budget = 0 for instant token output
+  const models = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-3.1-flash-lite"];
   let lastError: any = null;
 
   for (const modelName of models) {
@@ -183,6 +198,10 @@ export const generateItinerary = async (details: TripDetails): Promise<Itinerary
         model: modelName,
         contents: prompt,
         config: {
+          temperature: 0.3,
+          thinkingConfig: {
+            thinkingBudget: 0
+          },
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,

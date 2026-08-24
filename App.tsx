@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { TripDetails, Itinerary, SavedTrip, FlightInfo, HotelInfo, Activity, HeroImage } from './types';
-import { generateDestinationIllustration, generateItinerary } from './services/gemini';
+import { generateDestinationIllustration, generateItinerary, getInstantDestinationHero } from './services/gemini';
 import TripForm from './components/TripForm';
 import ItineraryDisplay from './components/ItineraryDisplay';
 import SearchWidget from './components/SearchWidget';
@@ -11,11 +11,10 @@ import ApiKeyModal from './components/ApiKeyModal';
 
 const STORAGE_KEY = 'tripwise_saved_trips';
 
-const preloadImage = (url: string, timeoutMs: number = 8000): Promise<void> => {
+const preloadImage = (url: string, timeoutMs: number = 2000): Promise<void> => {
   return new Promise((resolve) => {
     const img = new Image();
     const timeout = setTimeout(() => {
-      console.warn("Preload timeout reached for:", url);
       resolve();
     }, timeoutMs);
 
@@ -121,21 +120,24 @@ const App: React.FC = () => {
     setView('itinerary');
     
     try {
-      const itineraryPromise = generateItinerary(details);
-      const illustrationPromise = generateDestinationIllustration(details.destination);
-      
-      const [itineraryResult, initialHeroImage] = await Promise.all([
-        itineraryPromise,
-        illustrationPromise
-      ]);
+      const instantHero = getInstantDestinationHero(details.destination);
+      preloadImage(instantHero.url, 1200);
 
-      let finalHeroImage = initialHeroImage;
-      if (finalHeroImage) {
-        await preloadImage(finalHeroImage.url);
-      }
+      // Fast itinerary generation (< 2 seconds with zero-thinking flash model)
+      const itineraryResult = await generateItinerary(details);
+      itineraryResult.heroImage = instantHero;
 
-      itineraryResult.heroImage = finalHeroImage;
       setItinerary(itineraryResult);
+      setLoading(false);
+
+      // Optional background illustration refinement (non-blocking)
+      generateDestinationIllustration(details.destination, itineraryResult.heroSearchTerm)
+        .then((aiImage) => {
+          if (aiImage && aiImage.url !== instantHero.url) {
+            setItinerary((prev) => (prev ? { ...prev, heroImage: aiImage } : prev));
+          }
+        })
+        .catch(() => {});
     } catch (error: any) {
       console.error("Failed to generate itinerary:", error);
       if (error?.message?.includes("Missing Gemini API Key")) {
@@ -143,7 +145,6 @@ const App: React.FC = () => {
       } else {
         alert(error?.message || "An unexpected error occurred. Please try again.");
       }
-    } finally {
       setLoading(false);
     }
   };
