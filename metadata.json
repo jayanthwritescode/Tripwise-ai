@@ -1,0 +1,10 @@
+{
+  "name": "Tripwise",
+  "description": "A smart, premium AI-powered travel itinerary planner featuring integrated flight and hotel discovery using Google Search grounding and bespoke itinerary generation.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
