@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "tripwise-travel-ai"
-  }
+    "default": "tripwise-v2"
+  },
+  "targets": {},
+  "etags": {}
 }
